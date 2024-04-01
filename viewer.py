@@ -1,66 +1,61 @@
 import cv2
+import numpy as np
 import socket
-import pickle
-import struct
+import tkinter as tk
+from PIL import Image, ImageTk
 
-# Function to receive frame from server
-def receive_frame(client_socket):
-    # Receive the message size
-    message_size = client_socket.recv(8)
+# Client parameters
+server_ip = '127.0.0.1'  # Change this to the server's IP address
+server_port = 12345  # Change this to the server's port
 
-    # Unpack the message size
-    message_size = struct.unpack("L", message_size)[0]
+# Function to receive and display frames
+def receive_and_display():
+    print("Starting receive_and_display function...")
 
-    # Receive the serialized frame
-    data = b""
-    while len(data) < message_size:
-        packet = client_socket.recv(message_size - len(data))
-        if not packet:
-            return None
-        data += packet
+    # Create Tkinter window
+    root = tk.Tk()
+    root.title("UDP Image Viewer")
+    
+    # Create label to display images
+    label = tk.Label(root)
+    label.pack()
+    
+    # Function to update image in label
+    def update_image(frame):
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+        image = ImageTk.PhotoImage(image)
+        label.config(image=image)
+        label.image = image
+    
+    # Create a UDP socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((server_ip, server_port))
 
-    # Deserialize the frame
-    frame = pickle.loads(data)
-
-    return frame
-
-def main():
-    # Open a window
-    cv2.namedWindow('Remote Screen', cv2.WINDOW_NORMAL)
-
-    # Get the IP address of the server
-    server_ip = input("Enter the IP address of the streaming server: ")
-
-    # Connect to the streaming server
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((server_ip, 6969))
-    print("Connected to server.")
-
+    print("Socket created and bound. Starting loop...")
+    
+    # Continuously receive and display images
     while True:
-        try:
-            # Receive frame from server
-            frame = receive_frame(client_socket)
+        # Receive data from the server
+        data, _ = sock.recvfrom(65507)  # Adjust buffer size as needed
+        
+        # Decode the received JPEG data to image
+        nparr = np.frombuffer(data, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        # Display the received frame
+        update_image(frame)
+        
+        # Update the Tkinter window
+        root.update_idletasks()
+        root.update()
 
-            if frame is None:
-                print("Connection closed by server.")
-                break
+    # Close the Tkinter window
+    root.mainloop()
 
-            # Display the received frame
-            cv2.imshow('Remote Screen', frame)
-
-            # Break the loop when 'q' is pressed or if the window is closed
-            key = cv2.waitKey(1)
-            if key == ord('q') or cv2.getWindowProperty('Remote Screen', cv2.WND_PROP_VISIBLE) < 1:
-                break
-        except Exception as e:
-            print(f"Error: {e}")
-            break
-
-    # Release the client socket
-    client_socket.close()
-
-    # Release the window and destroy it
-    cv2.destroyAllWindows()
+# Main function
+def main():
+    receive_and_display()
 
 if __name__ == "__main__":
     main()
